@@ -1,50 +1,1187 @@
-<!DOCTYPE html>
-<html lang="id">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Villa Puncak Booking</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-slate-100 font-sans">
-    <div id="app" class="min-h-screen flex items-center justify-center p-4">
-        <!-- Halaman Login -->
-        <div id="loginPage" class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm">
-            <h1 class="text-2xl font-bold text-amber-600 mb-6 text-center">Villa Puncak</h1>
-            <input type="text" id="userInput" placeholder="Username" class="w-full border p-3 rounded-lg mb-4">
-            <input type="password" id="passInput" placeholder="Password" class="w-full border p-3 rounded-lg mb-6">
-            <button onclick="checkLogin()" class="w-full bg-amber-500 text-white font-bold py-3 rounded-lg hover:bg-amber-600 transition">Masuk</button>
-        </div>
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { Home, Calendar as CalendarIcon, DollarSign, FileText, LogOut, Plus, Printer, X, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle, Download } from 'lucide-react';
 
-        <!-- Dashboard (Hidden Awalnya) -->
-        <div id="dashboardPage" class="hidden w-full max-w-4xl">
-            <h1 class="text-3xl font-bold text-slate-800 mb-6">Dashboard Manajemen</h1>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div class="bg-white p-6 rounded-xl shadow border">
-                    <h2 class="font-bold text-lg mb-2">Booking Hari Ini</h2>
-                    <p class="text-slate-500">Sistem terhubung. Data akan muncul di sini.</p>
-                </div>
-                <div class="bg-white p-6 rounded-xl shadow border">
-                    <h2 class="font-bold text-lg mb-2">Laporan Keuangan</h2>
-                    <p class="text-slate-500">Belum ada transaksi.</p>
-                </div>
-            </div>
-            <button onclick="location.reload()" class="mt-6 text-slate-400 hover:text-slate-600">Keluar</button>
-        </div>
-    </div>
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
-    <script>
-        const USERS = { 'helmy': '789', 'maya': '678', 'yanti': '123' };
-        function checkLogin() {
-            const u = document.getElementById('userInput').value.toLowerCase();
-            const p = document.getElementById('passInput').value;
-            if (USERS[u] && USERS[u] === p) {
-                document.getElementById('loginPage').classList.add('hidden');
-                document.getElementById('dashboardPage').classList.remove('hidden');
-            } else {
-                alert("Username atau Password salah!");
-            }
+// Data Master Villa & Harga (Menggunakan Link Gambar Web Sementara agar muncul di Preview)
+const VILLAS = {
+  maja: { id: 'maja', name: 'Villa The Maja', image: 'https://images.unsplash.com/photo-1613490908571-f55655864197?auto=format&fit=crop&w=800&q=80', prices: { weekday: 11000000, friday: 12000000, saturday: 13000000, holiday: 17000000 }, extrabed: 85000 },
+  cijulang: { id: 'cijulang', name: 'Villa Cijulang Hills', image: 'https://images.unsplash.com/photo-1582268611958-ebfd161ef9cf?auto=format&fit=crop&w=800&q=80', prices: { weekday: 10000000, friday: 11000000, saturday: 12000000, holiday: 16000000 }, extrabed: 85000 },
+  deza: { id: 'deza', name: 'Villa Deza', image: 'https://images.unsplash.com/photo-1510798831971-661eb04b3739?auto=format&fit=crop&w=800&q=80', prices: { weekday: 5000000, friday: 6000000, saturday: 7000000, holiday: 10000000 }, extrabed: 65000 },
+  the_h: { id: 'the_h', name: 'Villa The H', image: 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80', prices: { weekday: 5000000, friday: 6000000, saturday: 7000000, holiday: 10000000 }, extrabed: 65000 }
+};
+
+const EXPENSE_CATEGORIES = ['Gaji', 'Bonus', 'Belanja & Operasional', 'Listrik Token', 'Wifi', 'Perawatan', 'Lain-lain'];
+const STAFF_LIST = ['Japar (Maja)', 'Deden (Maja)', 'Sandi (Cijulang)', 'Zakir (Cijulang)', 'Rudi (Deza)', 'Iman (Deza)', 'Ramdan (The H)', 'Kus (The H)'];
+const USERS = { 'yanti': { pass: '123', role: 'admin' }, 'maya': { pass: '678', role: 'owner' }, 'helmy': { pass: '789', role: 'owner' } };
+const MONTH_NAMES = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+
+const formatRp = (num) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(num || 0);
+const formatDate = (dateString) => {
+  if (!dateString) return '-';
+  const d = new Date(dateString);
+  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+const getDaysDiff = (start, end) => {
+  const d1 = new Date(start); const d2 = new Date(end);
+  return Math.max(0, Math.ceil((d2 - d1) / (1000 * 60 * 60 * 24)));
+};
+
+// Main App Component
+export default function App() {
+  const [fbUser, setFbUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null); // { username, role }
+  const [currentView, setCurrentView] = useState('dashboard'); // dashboard, availability, calendar, expenses, reports
+  const [selectedVilla, setSelectedVilla] = useState(null);
+  
+  // Data State
+  const [bookings, setBookings] = useState([]);
+  const [expenses, setExpenses] = useState([]);
+  
+  // Modals & Forms
+  const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
+  const [isExpenseModalOpen, setIsExpenseModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [printData, setPrintData] = useState(null); // For Invoice/Report Printing
+  const [toast, setToast] = useState(null);
+
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
         }
-    </script>
-</body>
-</html>
+      } catch (e) { console.error("Auth error:", e); }
+    };
+    initAuth();
+    return onAuthStateChanged(auth, setFbUser);
+  }, []);
+
+  useEffect(() => {
+    if (!fbUser) return;
+    const bookingsRef = collection(db, 'artifacts', appId, 'public', 'data', 'bookings');
+    const expensesRef = collection(db, 'artifacts', appId, 'public', 'data', 'expenses');
+    
+    const unsubBookings = onSnapshot(bookingsRef, (snap) => {
+      setBookings(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => console.error(err));
+    
+    const unsubExpenses = onSnapshot(expensesRef, (snap) => {
+      setExpenses(snap.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (err) => console.error(err));
+
+    return () => { unsubBookings(); unsubExpenses(); };
+  }, [fbUser]);
+
+  const showToast = (msg, type = 'success') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  if (!currentUser) {
+    return <Login onLogin={(u) => setCurrentUser(u)} />;
+  }
+
+  // If we are in print mode, render ONLY the print view
+  if (printData) {
+    return <PrintView data={printData} onClose={() => setPrintData(null)} />;
+  }
+
+  return (
+    <div className="flex h-screen bg-gray-50 font-sans text-slate-800">
+      {/* Sidebar */}
+      <aside className="w-64 bg-slate-900 text-white flex flex-col shadow-xl z-10">
+        <div className="p-6">
+          <h1 className="text-2xl font-bold tracking-wider text-amber-400">VILLA <span className="text-white">MANAGE</span></h1>
+          <p className="text-slate-400 text-sm mt-1">Welcome, {currentUser.username} ({currentUser.role})</p>
+        </div>
+        <nav className="flex-1 px-4 space-y-2 mt-4">
+          <NavBtn icon={<Home />} label="Dashboard Villa" active={currentView === 'dashboard'} onClick={() => setCurrentView('dashboard')} />
+          <NavBtn icon={<CalendarIcon />} label="Cek Ketersediaan" active={currentView === 'availability'} onClick={() => setCurrentView('availability')} />
+          <NavBtn icon={<DollarSign />} label="Pengeluaran" active={currentView === 'expenses'} onClick={() => setCurrentView('expenses')} />
+          {currentUser.role === 'owner' && (
+            <NavBtn icon={<FileText />} label="Laporan Keuangan" active={currentView === 'reports'} onClick={() => setCurrentView('reports')} />
+          )}
+        </nav>
+        <div className="p-4 border-t border-slate-700">
+          <button onClick={() => setCurrentUser(null)} className="flex items-center gap-3 text-slate-400 hover:text-white w-full px-4 py-2 rounded-lg transition-colors">
+            <LogOut size={20} /> Keluar
+          </button>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden">
+        {/* Header */}
+        <header className="bg-white shadow-sm border-b px-8 py-4 flex items-center justify-between z-0">
+          <h2 className="text-xl font-semibold text-slate-800">
+            {currentView === 'dashboard' && 'Aplikasi Booking The Villa Puncak'}
+            {currentView === 'availability' && 'Kalender Ketersediaan (Semua Villa)'}
+            {currentView === 'calendar' && `Kalender Booking - ${VILLAS[selectedVilla]?.name}`}
+            {currentView === 'expenses' && 'Catatan Pengeluaran'}
+            {currentView === 'reports' && 'Laporan Keuangan (Owner)'}
+          </h2>
+          {currentView === 'calendar' && (
+             <button onClick={() => { setEditingItem(null); setIsBookingModalOpen(true); }} className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg shadow flex items-center gap-2 transition-all">
+               <Plus size={18} /> Tambah Booking
+             </button>
+          )}
+          {currentView === 'expenses' && (
+             <button onClick={() => { setEditingItem(null); setIsExpenseModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg shadow flex items-center gap-2 transition-all">
+               <Plus size={18} /> Tambah Pengeluaran
+             </button>
+          )}
+        </header>
+
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-auto p-8 relative">
+           {toast && (
+             <div className={`absolute top-4 right-8 px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 z-50 animate-bounce ${toast.type === 'error' ? 'bg-red-100 text-red-800 border border-red-200' : 'bg-green-100 text-green-800 border border-green-200'}`}>
+               {toast.type === 'error' ? <AlertCircle size={20} /> : <CheckCircle2 size={20} />}
+               <span className="font-medium">{toast.msg}</span>
+             </div>
+           )}
+
+           {currentView === 'dashboard' && (
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+               {Object.values(VILLAS).map(v => (
+                 <div key={v.id} onClick={() => { setSelectedVilla(v.id); setCurrentView('calendar'); }} className="bg-white rounded-2xl shadow-sm hover:shadow-xl transition-all cursor-pointer overflow-hidden border border-slate-100 group">
+                   <div className="h-48 bg-slate-200 overflow-hidden relative">
+                     <img src={v.image} alt={v.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" onError={(e) => { e.target.onerror = null; e.target.src = 'https://via.placeholder.com/600x400?text=Gambar+Villa+Belum+Ada'; }} />
+                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+                     <h3 className="absolute bottom-4 left-6 text-2xl font-bold text-white">{v.name}</h3>
+                   </div>
+                   <div className="p-6">
+                     <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+                       <div><p className="text-slate-500">Weekdays</p><p className="font-semibold">{formatRp(v.prices.weekday)}</p></div>
+                       <div><p className="text-slate-500">Jumat</p><p className="font-semibold">{formatRp(v.prices.friday)}</p></div>
+                       <div><p className="text-slate-500">Sabtu</p><p className="font-semibold">{formatRp(v.prices.saturday)}</p></div>
+                       <div><p className="text-slate-500">Holiday</p><p className="font-semibold text-amber-600">{formatRp(v.prices.holiday)}</p></div>
+                     </div>
+                     <div className="flex justify-between items-center pt-4 border-t border-slate-100">
+                        <span className="text-slate-500 text-sm">Extrabed: {formatRp(v.extrabed)}/malam</span>
+                        <button className="text-amber-600 font-medium flex items-center gap-1 group-hover:text-amber-700">Lihat Kalender <ChevronRight size={16}/></button>
+                     </div>
+                   </div>
+                 </div>
+               ))}
+             </div>
+           )}
+
+           {currentView === 'availability' && (
+             <MasterCalendarView bookings={bookings} onBack={() => setCurrentView('dashboard')} />
+           )}
+
+           {currentView === 'calendar' && selectedVilla && (
+             <CalendarView 
+               villa={VILLAS[selectedVilla]} 
+               bookings={bookings.filter(b => b.villaId === selectedVilla)}
+               onEdit={(b) => { setEditingItem(b); setIsBookingModalOpen(true); }}
+               onBack={() => setCurrentView('dashboard')}
+               onPrintInvoice={(b) => setPrintData({ type: 'invoice', data: b })}
+             />
+           )}
+
+           {currentView === 'expenses' && (
+             <ExpensesView 
+                expenses={expenses} 
+                onEdit={(e) => { setEditingItem(e); setIsExpenseModalOpen(true); }} 
+             />
+           )}
+
+           {currentView === 'reports' && currentUser.role === 'owner' && (
+             <ReportsView bookings={bookings} expenses={expenses} onPrintReport={(data) => setPrintData({ type: 'report', data })} />
+           )}
+        </div>
+      </main>
+
+      {/* Modals */}
+      {isBookingModalOpen && (
+        <BookingModal 
+          villaId={selectedVilla || editingItem?.villaId || 'maja'}
+          existingBooking={editingItem}
+          allBookings={bookings}
+          onClose={() => { setIsBookingModalOpen(false); setEditingItem(null); }}
+          onSave={async (data) => {
+            try {
+              const pathBase = collection(db, 'artifacts', appId, 'public', 'data', 'bookings');
+              if (data.id) {
+                await updateDoc(doc(pathBase, data.id), data);
+                showToast('Booking berhasil diupdate');
+              } else {
+                await addDoc(pathBase, { ...data, createdAt: new Date().toISOString() });
+                showToast('Booking baru berhasil disimpan');
+              }
+              setIsBookingModalOpen(false);
+            } catch (err) { console.error(err); showToast('Gagal menyimpan data', 'error'); }
+          }}
+          onDelete={async (id) => {
+            if(!confirm('Hapus booking ini?')) return;
+            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'bookings', id));
+            setIsBookingModalOpen(false); showToast('Booking dihapus');
+          }}
+        />
+      )}
+
+      {isExpenseModalOpen && (
+        <ExpenseModal 
+          existingExpense={editingItem}
+          onClose={() => { setIsExpenseModalOpen(false); setEditingItem(null); }}
+          onSave={async (data) => {
+             try {
+              const pathBase = collection(db, 'artifacts', appId, 'public', 'data', 'expenses');
+              if (data.id) {
+                await updateDoc(doc(pathBase, data.id), data);
+                showToast('Pengeluaran diupdate');
+              } else {
+                await addDoc(pathBase, { ...data, createdAt: new Date().toISOString() });
+                showToast('Pengeluaran disimpan');
+              }
+              setIsExpenseModalOpen(false);
+            } catch (err) { console.error(err); showToast('Gagal menyimpan data', 'error'); }
+          }}
+          onDelete={async (id) => {
+            if(!confirm('Hapus pengeluaran ini?')) return;
+            await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'expenses', id));
+            setIsExpenseModalOpen(false); showToast('Pengeluaran dihapus');
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+const Login = ({ onLogin }) => {
+  const [user, setUser] = useState('');
+  const [pass, setPass] = useState('');
+  const [err, setErr] = useState('');
+
+  const handleLogin = (e) => {
+    e.preventDefault();
+    if (USERS[user] && USERS[user].pass === pass) {
+      onLogin({ username: user, role: USERS[user].role });
+    } else {
+      setErr('Username atau Password salah!');
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-slate-100">
+      <div className="bg-white p-10 rounded-2xl shadow-xl w-96 max-w-full">
+        <div className="text-center mb-8">
+          <h1 className="text-2xl font-bold text-slate-800">Aplikasi Booking</h1>
+          <h2 className="text-xl font-bold text-amber-500">The Villa Puncak</h2>
+          <p className="text-slate-500 mt-2">Masuk ke sistem manajemen</p>
+        </div>
+        {err && <div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm text-center">{err}</div>}
+        <form onSubmit={handleLogin} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Username</label>
+            <input type="text" value={user} onChange={e=>setUser(e.target.value)} className="w-full border-slate-300 rounded-lg p-3 border focus:ring-amber-500 focus:border-amber-500 outline-none" placeholder="Masukkan Username" required />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+            <input type="password" value={pass} onChange={e=>setPass(e.target.value)} className="w-full border-slate-300 rounded-lg p-3 border focus:ring-amber-500 focus:border-amber-500 outline-none" placeholder="Masukkan Password" required />
+          </div>
+          <button type="submit" className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 rounded-lg shadow transition-colors mt-6">
+            Masuk
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+const NavBtn = ({ icon, label, active, onClick }) => (
+  <button onClick={onClick} className={`flex items-center gap-3 w-full px-4 py-3 rounded-xl transition-all ${active ? 'bg-amber-500 text-white shadow-lg' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+    {icon} <span className="font-medium">{label}</span>
+  </button>
+);
+
+// --- Master Calendar View (Baru) ---
+const MasterCalendarView = ({ bookings, onBack }) => {
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+  const firstDayOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
+  
+  const handlePrevMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+  const handleNextMonth = () => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+
+  // Menentukan apakah sebuah villa ter-booking pada tanggal tertentu
+  const isBooked = (villaId, dateNum) => {
+    const checkDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), dateNum).getTime();
+    return bookings.some(b => {
+      if (b.villaId !== villaId) return false;
+      const ci = new Date(b.checkIn).setHours(0,0,0,0);
+      const co = new Date(b.checkOut).setHours(0,0,0,0);
+      // Kamar dianggap dibooking jika checkDate berada di antara Check-in (inklusif) dan SEBELUM Check-out.
+      // Hari check-out sendiri bisa diisi tamu baru.
+      return checkDate >= ci && checkDate < co;
+    });
+  };
+
+  const getDayName = (dateNum) => {
+    const d = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), dateNum).getDay();
+    return ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'][d];
+  };
+
+  return (
+    <div className="space-y-6">
+       <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors">
+         <ChevronLeft size={20} /> Kembali ke Dashboard
+       </button>
+       
+       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden p-6">
+          <div className="flex justify-between items-center mb-6">
+             <h3 className="text-xl font-bold text-slate-800">Cek Ketersediaan Cepat</h3>
+             <div className="flex items-center gap-4">
+               <button onClick={handlePrevMonth} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg"><ChevronLeft size={20}/></button>
+               <span className="font-bold text-lg min-w-[150px] text-center">{MONTH_NAMES[currentMonth.getMonth()]} {currentMonth.getFullYear()}</span>
+               <button onClick={handleNextMonth} className="p-2 bg-slate-100 hover:bg-slate-200 rounded-lg"><ChevronRight size={20}/></button>
+             </div>
+          </div>
+
+          <div className="overflow-x-auto pb-4">
+            <table className="w-full text-center border-collapse">
+              <thead>
+                <tr>
+                  <th className="p-3 border border-slate-200 bg-slate-50 sticky left-0 z-10 w-48 text-left">Nama Villa</th>
+                  {[...Array(daysInMonth)].map((_, i) => (
+                    <th key={i} className={`p-2 border border-slate-200 min-w-[45px] text-xs ${getDayName(i+1) === 'Min' || getDayName(i+1) === 'Sab' ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-600'}`}>
+                      <div>{getDayName(i+1)}</div>
+                      <div className="text-lg font-bold">{i+1}</div>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Object.values(VILLAS).map(villa => (
+                  <tr key={villa.id}>
+                    <td className="p-3 border border-slate-200 bg-white sticky left-0 z-10 font-bold text-slate-800 text-left shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">{villa.name}</td>
+                    {[...Array(daysInMonth)].map((_, i) => {
+                       const booked = isBooked(villa.id, i+1);
+                       return (
+                         <td key={i} className={`p-1 border border-slate-200 ${booked ? 'bg-amber-100' : ''}`}>
+                            {booked ? <div className="w-full h-8 bg-amber-500 rounded text-xs text-white flex items-center justify-center font-bold" title="Sudah Dibooking">B</div> : <div className="w-full h-8 flex items-center justify-center text-slate-300 text-xs">-</div>}
+                         </td>
+                       );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-4 flex gap-4 text-sm text-slate-600">
+             <div className="flex items-center gap-2"><div className="w-4 h-4 bg-amber-500 rounded"></div> = Sudah Dibooking</div>
+             <div className="flex items-center gap-2"><div className="w-4 h-4 bg-white border border-slate-300 rounded"></div> = Kosong (Tersedia)</div>
+          </div>
+       </div>
+    </div>
+  );
+}
+
+const CalendarView = ({ villa, bookings, onEdit, onBack, onPrintInvoice }) => {
+  // Simple List view for calendar to ensure mobile responsiveness and clear UI
+  const sortedBookings = [...bookings].sort((a,b) => new Date(a.checkIn) - new Date(b.checkIn));
+  const upcoming = sortedBookings.filter(b => new Date(b.checkOut) >= new Date(new Date().setHours(0,0,0,0)));
+
+  return (
+    <div className="space-y-6">
+       <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-slate-800 transition-colors">
+         <ChevronLeft size={20} /> Kembali ke Dashboard
+       </button>
+       
+       <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+            <div>
+              <h3 className="text-lg font-semibold text-slate-800">Daftar Reservasi Mendatang</h3>
+              <p className="text-sm text-slate-500">Semua tamu yang akan datang di {villa.name}</p>
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-slate-600 text-sm border-b">
+                  <th className="p-4 font-medium">Tamu</th>
+                  <th className="p-4 font-medium">Check In</th>
+                  <th className="p-4 font-medium">Check Out</th>
+                  <th className="p-4 font-medium">Malam</th>
+                  <th className="p-4 font-medium">Status Bayar</th>
+                  <th className="p-4 font-medium">Sisa Tagihan</th>
+                  <th className="p-4 font-medium text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {upcoming.length === 0 ? (
+                  <tr><td colSpan="7" className="p-8 text-center text-slate-400">Belum ada booking mendatang.</td></tr>
+                ) : upcoming.map(b => (
+                  <tr key={b.id} className="hover:bg-amber-50/50 transition-colors">
+                    <td className="p-4">
+                      <div className="font-semibold text-slate-800">{b.guestName}</div>
+                      {b.isBroker && <div className="text-xs text-blue-600">Broker: {b.brokerName}</div>}
+                    </td>
+                    <td className="p-4 text-slate-600">{formatDate(b.checkIn)}</td>
+                    <td className="p-4 text-slate-600">{formatDate(b.checkOut)}</td>
+                    <td className="p-4 text-slate-600">{b.nights}</td>
+                    <td className="p-4">
+                       <span className={`px-2.5 py-1 text-xs font-medium rounded-full ${
+                         b.paymentStatus === 'Lunas' ? 'bg-green-100 text-green-700' :
+                         b.paymentStatus === 'Baru DP' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'
+                       }`}>
+                         {b.paymentStatus || 'Belum DP'}
+                       </span>
+                    </td>
+                    <td className="p-4 font-medium text-slate-800">
+                      {formatRp(Math.max(0, b.grandTotal - (b.dpAmount||0) - (b.pelunasanAmount||0)))}
+                    </td>
+                    <td className="p-4 text-right space-x-2 flex justify-end">
+                      <button onClick={() => onPrintInvoice(b)} title="Cetak Invoice DP" className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><Printer size={18}/></button>
+                      <button onClick={() => onEdit(b)} className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition-colors">Detail / Edit</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+       </div>
+    </div>
+  )
+}
+
+const ExpensesView = ({ expenses, onEdit }) => {
+  const sorted = [...expenses].sort((a,b) => new Date(b.date) - new Date(a.date));
+  
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse">
+          <thead>
+            <tr className="bg-slate-50 text-slate-600 text-sm border-b">
+              <th className="p-4 font-medium">Tanggal</th>
+              <th className="p-4 font-medium">Villa</th>
+              <th className="p-4 font-medium">Kategori</th>
+              <th className="p-4 font-medium">Keterangan</th>
+              <th className="p-4 font-medium">Penanggung Jawab</th>
+              <th className="p-4 font-medium text-right">Jumlah</th>
+              <th className="p-4 font-medium text-center">Aksi</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {sorted.length === 0 ? (
+              <tr><td colSpan="7" className="p-8 text-center text-slate-400">Belum ada data pengeluaran.</td></tr>
+            ) : sorted.map(e => (
+              <tr key={e.id} className="hover:bg-slate-50 transition-colors">
+                <td className="p-4 text-slate-600">{formatDate(e.date)}</td>
+                <td className="p-4 font-medium">{VILLAS[e.villaId]?.name}</td>
+                <td className="p-4"><span className="px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded">{e.category}</span></td>
+                <td className="p-4 text-slate-600 max-w-xs truncate" title={e.description}>{e.description}</td>
+                <td className="p-4 text-slate-600">{e.staffName}</td>
+                <td className="p-4 text-right font-medium text-red-600">{formatRp(e.amount)}</td>
+                <td className="p-4 text-center">
+                  <button onClick={() => onEdit(e)} className="text-blue-600 hover:underline text-sm font-medium">Edit</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+const ReportsView = ({ bookings, expenses, onPrintReport }) => {
+  const [reportType, setReportType] = useState('per_villa'); // 'per_villa' atau 'semua'
+  const [selectedVilla, setSelectedVilla] = useState('maja');
+  
+  const [startMonth, setStartMonth] = useState(() => {
+    const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [endMonth, setEndMonth] = useState(() => {
+    const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+
+  const generateData = () => {
+    const [sy, sm] = startMonth.split('-');
+    const [ey, em] = endMonth.split('-');
+    
+    // Tentukan hari pertama di bulan awal, dan hari terakhir di bulan akhir
+    const startDate = new Date(sy, sm - 1, 1).getTime();
+    const endDate = new Date(ey, em, 0, 23, 59, 59).getTime();
+
+    const formatMonthYear = (yyyymm) => {
+      const [y, m] = yyyymm.split('-');
+      return `${MONTH_NAMES[parseInt(m) - 1]} ${y}`;
+    };
+
+    const periodName = startMonth === endMonth 
+      ? formatMonthYear(startMonth) 
+      : `${formatMonthYear(startMonth)} s/d ${formatMonthYear(endMonth)}`;
+    
+    // Filter bookings
+    const filteredBookings = bookings.filter(b => {
+      if (reportType === 'per_villa' && b.villaId !== selectedVilla) return false;
+      const d = new Date(b.checkIn).getTime();
+      return d >= startDate && d <= endDate;
+    });
+
+    // Filter expenses
+    const filteredExpenses = expenses.filter(e => {
+      if (reportType === 'per_villa' && e.villaId !== selectedVilla) return false;
+      const d = new Date(e.date).getTime();
+      return d >= startDate && d <= endDate;
+    });
+
+    // Urutkan berdasarkan tanggal
+    filteredBookings.sort((a,b) => new Date(a.checkIn) - new Date(b.checkIn));
+    filteredExpenses.sort((a,b) => new Date(a.date) - new Date(b.date));
+
+    const totalIncome = filteredBookings.reduce((sum, b) => sum + (b.grandTotal || 0), 0);
+    const totalExpense = filteredExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    
+    return {
+      reportType,
+      villa: reportType === 'per_villa' ? VILLAS[selectedVilla] : { name: 'SEMUA VILLA' },
+      period: periodName,
+      bookings: filteredBookings,
+      expenses: filteredExpenses,
+      totalIncome,
+      totalExpense,
+      netProfit: totalIncome - totalExpense
+    };
+  };
+
+  const reportData = generateData();
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-wrap gap-6 items-end">
+        <div className="w-full mb-2">
+           <label className="block text-sm font-medium text-slate-700 mb-2">Tipe Laporan</label>
+           <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer bg-slate-50 px-4 py-2 rounded-lg border hover:bg-slate-100">
+                <input type="radio" checked={reportType === 'per_villa'} onChange={() => setReportType('per_villa')} className="w-4 h-4 text-amber-500" />
+                <span className="font-medium text-slate-700">Per Villa</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer bg-slate-50 px-4 py-2 rounded-lg border hover:bg-slate-100">
+                <input type="radio" checked={reportType === 'semua'} onChange={() => setReportType('semua')} className="w-4 h-4 text-amber-500" />
+                <span className="font-medium text-slate-700">Semua Villa (Gabungan)</span>
+              </label>
+           </div>
+        </div>
+
+        {reportType === 'per_villa' && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Pilih Villa</label>
+            <select value={selectedVilla} onChange={e=>setSelectedVilla(e.target.value)} className="border p-2.5 rounded-lg outline-none focus:border-amber-500 min-w-[200px]">
+              {Object.values(VILLAS).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+          </div>
+        )}
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Bulan Mulai</label>
+          <input type="month" value={startMonth} onChange={e=>setStartMonth(e.target.value)} className="border p-2.5 rounded-lg outline-none focus:border-amber-500" />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Bulan Akhir</label>
+          <input type="month" value={endMonth} onChange={e=>setEndMonth(e.target.value)} className="border p-2.5 rounded-lg outline-none focus:border-amber-500" />
+        </div>
+        
+        <button onClick={() => onPrintReport(reportData)} className="bg-slate-800 hover:bg-slate-900 text-white px-6 py-2.5 rounded-lg flex items-center gap-2 transition-colors ml-auto shadow">
+          <Printer size={18} /> Lihat & Cetak PDF Laporan
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500">
+           <p className="text-slate-500 text-sm font-medium">Total Pemasukan</p>
+           <p className="text-3xl font-bold text-slate-800 mt-2">{formatRp(reportData.totalIncome)}</p>
+           <p className="text-xs text-slate-400 mt-1">Dari {reportData.bookings.length} booking</p>
+        </div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-red-500">
+           <p className="text-slate-500 text-sm font-medium">Total Pengeluaran</p>
+           <p className="text-3xl font-bold text-slate-800 mt-2">{formatRp(reportData.totalExpense)}</p>
+           <p className="text-xs text-slate-400 mt-1">Dari {reportData.expenses.length} catatan</p>
+        </div>
+        <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-amber-500">
+           <p className="text-slate-500 text-sm font-medium">Laba Bersih</p>
+           <p className="text-3xl font-bold text-slate-800 mt-2">{formatRp(reportData.netProfit)}</p>
+           <p className="text-xs text-slate-400 mt-1">{reportData.villa.name}</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+const BookingModal = ({ villaId, existingBooking, allBookings, onClose, onSave, onDelete }) => {
+  const villa = VILLAS[villaId];
+  const [formData, setFormData] = useState(existingBooking || {
+    villaId, guestName: '', guestPhone: '', checkIn: '', checkOut: '', nights: 1, 
+    basePrice: 0, isBroker: false, brokerName: '', brokerPhone: '',
+    extrabedQty: 0, extrabedPriceTotal: 0, isHolidayOverride: false,
+    familyDiscount: 0, dpAmount: 0, dpDate: '', pelunasanAmount: 0, pelunasanDate: '', paymentStatus: 'Belum DP', notes: ''
+  });
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Auto calculate when dates change
+  useEffect(() => {
+    if (formData.checkIn && formData.checkOut) {
+      const nights = getDaysDiff(formData.checkIn, formData.checkOut);
+      if (nights <= 0) return;
+      
+      // Calculate default base price based on days
+      let calcPrice = 0;
+      let currDate = new Date(formData.checkIn);
+      for(let i=0; i<nights; i++) {
+        const day = currDate.getDay(); // 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat
+        if (formData.isHolidayOverride) {
+          calcPrice += villa.prices.holiday;
+        } else if (day === 5) {
+          calcPrice += villa.prices.friday;
+        } else if (day === 6) {
+          calcPrice += villa.prices.saturday;
+        } else {
+          calcPrice += villa.prices.weekday; // Sun-Thu
+        }
+        currDate.setDate(currDate.getDate() + 1);
+      }
+      
+      const extrabedTotal = formData.extrabedQty * villa.extrabed * nights;
+
+      setFormData(prev => ({
+        ...prev, 
+        nights, 
+        // Force update basePrice IF it's a new booking OR if the user changes dates.
+        // We assume if they change dates, they want the new default price calculated.
+        basePrice: calcPrice,
+        extrabedPriceTotal: extrabedTotal
+      }));
+    }
+  }, [formData.checkIn, formData.checkOut, formData.isHolidayOverride, formData.extrabedQty, villa]);
+
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+  };
+
+  const handleNumChange = (name, val) => {
+    setFormData(prev => ({ ...prev, [name]: Number(val) }));
+  }
+
+  const grandTotal = Number(formData.basePrice) + Number(formData.extrabedPriceTotal) - Number(formData.familyDiscount);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (getDaysDiff(formData.checkIn, formData.checkOut) <= 0) {
+      return setErrorMsg('Check-out harus setelah Check-in');
+    }
+    
+    // Check overlaps
+    const overlap = allBookings.some(b => {
+      if (b.id === formData.id || b.villaId !== formData.villaId) return false;
+      const bIn = new Date(b.checkIn).getTime();
+      const bOut = new Date(b.checkOut).getTime();
+      const fIn = new Date(formData.checkIn).getTime();
+      const fOut = new Date(formData.checkOut).getTime();
+      // Overlap logic: Start is before other ends AND End is after other starts
+      return (fIn < bOut && fOut > bIn);
+    });
+
+    if (overlap) {
+      return setErrorMsg('Sudah ada tamu di tanggal tersebut. Silahkan pilih tanggal atau villa lain.');
+    }
+
+    onSave({ ...formData, grandTotal });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl relative flex flex-col max-h-[95vh]">
+        <button onClick={onClose} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-800 rounded-full hover:bg-slate-100 z-10"><X size={24}/></button>
+        
+        <div className="p-6 border-b border-slate-100 shrink-0">
+          <h2 className="text-2xl font-bold text-slate-800">{existingBooking ? 'Edit' : 'Tambah'} Booking - {villa.name}</h2>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-6 overflow-y-auto">
+          {errorMsg && <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center gap-2"><AlertCircle size={18}/> {errorMsg}</div>}
+          
+          {/* Section 1: Tamu & Tanggal */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Nama Tamu Pemesan</label>
+              <input type="text" name="guestName" value={formData.guestName} onChange={handleChange} required className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500" placeholder="Contoh: Bpk. Budi" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">No WA Tamu</label>
+              <input type="text" name="guestPhone" value={formData.guestPhone || ''} onChange={handleChange} className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500" placeholder="0812xxxxxx" />
+            </div>
+
+            <div className="md:col-span-2 mt-2">
+              <label className="block text-sm font-medium text-slate-700 mb-2">Tipe Pemesanan</label>
+              <div className="flex gap-6">
+                <label className="flex items-center gap-2 cursor-pointer bg-slate-50 px-4 py-2 rounded-lg border hover:bg-slate-100 transition-colors">
+                  <input type="radio" checked={!formData.isBroker} onChange={() => setFormData(prev => ({ ...prev, isBroker: false, brokerName: '', brokerPhone: '' }))} className="w-4 h-4 text-amber-500" />
+                  <span className="text-slate-700 font-medium">Tamu Langsung</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer bg-slate-50 px-4 py-2 rounded-lg border hover:bg-slate-100 transition-colors">
+                  <input type="radio" checked={formData.isBroker} onChange={() => setFormData(prev => ({ ...prev, isBroker: true }))} className="w-4 h-4 text-amber-500" />
+                  <span className="text-slate-700 font-medium">Via Broker</span>
+                </label>
+              </div>
+            </div>
+            
+            {formData.isBroker && (
+              <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                <div>
+                  <label className="block text-sm font-medium text-blue-800 mb-1">Nama Broker</label>
+                  <input type="text" name="brokerName" value={formData.brokerName} onChange={handleChange} required={formData.isBroker} className="w-full border p-2.5 rounded-lg outline-none focus:border-blue-500 bg-white" placeholder="Nama Broker" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-blue-800 mb-1">No WA Broker</label>
+                  <input type="text" name="brokerPhone" value={formData.brokerPhone} onChange={handleChange} required={formData.isBroker} className="w-full border p-2.5 rounded-lg outline-none focus:border-blue-500 bg-white" placeholder="08xxxxxx" />
+                </div>
+              </div>
+            )}
+
+            <div className="mt-2">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Tanggal Check In</label>
+              <input type="date" name="checkIn" value={formData.checkIn} onChange={handleChange} required className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500" />
+            </div>
+            <div className="mt-2">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Tanggal Check Out</label>
+              <input type="date" name="checkOut" value={formData.checkOut} onChange={handleChange} required className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500" />
+            </div>
+          </div>
+          
+          {/* Section 2: Biaya */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+             <div>
+               <label className="block text-sm font-medium text-slate-700 mb-1">Harga Total Sewa (Bisa di-edit)</label>
+               <input type="number" name="basePrice" value={formData.basePrice} onChange={e=>handleNumChange('basePrice', e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500 font-semibold" />
+             </div>
+             <div>
+               <label className="block text-sm font-medium text-slate-700 mb-1">Jumlah Extrabed</label>
+               <input type="number" name="extrabedQty" min="0" value={formData.extrabedQty} onChange={e=>handleNumChange('extrabedQty', e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500" />
+             </div>
+             <div>
+               <label className="block text-sm font-medium text-slate-700 mb-1">Total Biaya Extrabed (Edit jika ditawar)</label>
+               <input type="number" name="extrabedPriceTotal" value={formData.extrabedPriceTotal} onChange={e=>handleNumChange('extrabedPriceTotal', e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500" />
+               <p className="text-xs text-slate-400 mt-1">Default: {formData.extrabedQty} x {formatRp(villa.extrabed)} x {formData.nights} malam</p>
+             </div>
+             <div>
+               <label className="block text-sm font-medium text-slate-700 mb-1">Diskon Keluarga (Rupiah)</label>
+               <input type="number" name="familyDiscount" value={formData.familyDiscount} onChange={e=>handleNumChange('familyDiscount', e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500 text-red-600" />
+             </div>
+          </div>
+
+          <div className="bg-amber-50 p-4 rounded-xl border border-amber-100 flex justify-between items-center">
+             <span className="font-medium text-amber-900">GRAND TOTAL</span>
+             <span className="text-2xl font-bold text-amber-700">{formatRp(grandTotal)}</span>
+          </div>
+
+          <hr className="border-slate-100" />
+
+          {/* Section 3: Pembayaran & Status */}
+          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-4">
+             <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Status Pembayaran</label>
+                <select name="paymentStatus" value={formData.paymentStatus} onChange={handleChange} className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500 bg-white font-medium">
+                  <option value="Belum DP">Belum DP</option>
+                  <option value="Baru DP">Baru DP</option>
+                  <option value="Lunas">Sudah Lunas</option>
+                </select>
+             </div>
+             
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 bg-blue-50/50 rounded-lg border border-blue-100">
+                  <label className="block text-sm font-medium text-blue-800 mb-1">Jumlah DP</label>
+                  <input type="number" name="dpAmount" value={formData.dpAmount} onChange={e=>handleNumChange('dpAmount', e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:border-blue-500 text-blue-700 font-semibold bg-white mb-3" />
+                  <label className="block text-sm font-medium text-blue-800 mb-1">Tanggal Bayar DP</label>
+                  <input type="date" name="dpDate" value={formData.dpDate} onChange={handleChange} className="w-full border p-2.5 rounded-lg outline-none focus:border-blue-500 bg-white" />
+                </div>
+                
+                <div className="p-4 bg-green-50/50 rounded-lg border border-green-100">
+                  <label className="block text-sm font-medium text-green-800 mb-1">Jumlah Pelunasan</label>
+                  <input type="number" name="pelunasanAmount" value={formData.pelunasanAmount} onChange={e=>handleNumChange('pelunasanAmount', e.target.value)} className="w-full border p-2.5 rounded-lg outline-none focus:border-green-500 text-green-700 font-semibold bg-white mb-3" />
+                  <label className="block text-sm font-medium text-green-800 mb-1">Tanggal Pelunasan</label>
+                  <input type="date" name="pelunasanDate" value={formData.pelunasanDate} onChange={handleChange} className="w-full border p-2.5 rounded-lg outline-none focus:border-green-500 bg-white" />
+                </div>
+             </div>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Sisa Tagihan (Setelah DP & Pelunasan)</label>
+            <div className="w-full p-3 rounded-lg bg-slate-100 font-bold text-slate-800 text-xl flex items-center justify-between">
+              <span>Sisa:</span>
+              <span className={Math.max(0, grandTotal - (formData.dpAmount || 0) - (formData.pelunasanAmount || 0)) === 0 ? 'text-green-600' : 'text-red-600'}>
+                {formatRp(Math.max(0, grandTotal - (formData.dpAmount || 0) - (formData.pelunasanAmount || 0)))}
+              </span>
+            </div>
+          </div>
+
+          <div>
+             <label className="block text-sm font-medium text-slate-700 mb-1">Catatan Tambahan</label>
+             <textarea name="notes" rows="2" value={formData.notes} onChange={handleChange} className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500"></textarea>
+          </div>
+
+          <div className="flex justify-between pt-4">
+             {existingBooking ? (
+               <button type="button" onClick={() => onDelete(existingBooking.id)} className="text-red-600 font-medium px-4 py-2 hover:bg-red-50 rounded-lg">Hapus Booking</button>
+             ) : <div></div>}
+             <div className="flex gap-3">
+               <button type="button" onClick={onClose} className="px-6 py-2.5 rounded-lg border font-medium hover:bg-slate-50">Batal</button>
+               <button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white px-8 py-2.5 rounded-lg font-bold shadow-lg transition-colors">Simpan Booking</button>
+             </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+const ExpenseModal = ({ existingExpense, onClose, onSave, onDelete }) => {
+  const [formData, setFormData] = useState(existingExpense || {
+    date: new Date().toISOString().split('T')[0],
+    villaId: 'maja', category: 'Belanja & Operasional',
+    description: '', amount: '', staffName: '', hasNota: false
+  });
+
+  const handleChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave({ ...formData, amount: Number(formData.amount) });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg relative">
+        <button onClick={onClose} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-800 rounded-full hover:bg-slate-100"><X size={24}/></button>
+        <div className="p-6 border-b border-slate-100">
+          <h2 className="text-2xl font-bold text-slate-800">{existingExpense ? 'Edit' : 'Tambah'} Pengeluaran</h2>
+        </div>
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Tanggal</label>
+            <input type="date" name="date" value={formData.date} onChange={handleChange} required className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Villa</label>
+              <select name="villaId" value={formData.villaId} onChange={handleChange} className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500">
+                {Object.values(VILLAS).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Kategori</label>
+              <select name="category" value={formData.category} onChange={handleChange} className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500">
+                {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Keterangan / Deskripsi</label>
+            <textarea name="description" value={formData.description} onChange={handleChange} required rows="2" className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500"></textarea>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+             <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Penanggung Jawab (Penjaga)</label>
+              <select name="staffName" value={formData.staffName} onChange={handleChange} required className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500">
+                <option value="" disabled>-- Pilih Penjaga --</option>
+                {STAFF_LIST.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Jumlah (Rp)</label>
+              <input type="number" name="amount" value={formData.amount} onChange={handleChange} required min="1" className="w-full border p-2.5 rounded-lg outline-none focus:border-amber-500 text-red-600 font-semibold" />
+            </div>
+          </div>
+          <div className="pt-2 flex items-center gap-2">
+             <input type="checkbox" name="hasNota" checked={formData.hasNota} onChange={handleChange} id="nota" className="w-4 h-4 text-blue-600" />
+             <label htmlFor="nota" className="text-sm text-slate-700">Ada Bukti / Nota (Fisik)</label>
+          </div>
+          <div className="flex justify-between pt-6 border-t mt-6 border-slate-100">
+             {existingExpense ? (
+               <button type="button" onClick={() => onDelete(existingExpense.id)} className="text-red-600 font-medium px-4 py-2 hover:bg-red-50 rounded-lg">Hapus</button>
+             ) : <div></div>}
+             <div className="flex gap-3">
+               <button type="button" onClick={onClose} className="px-6 py-2 rounded-lg border font-medium hover:bg-slate-50">Batal</button>
+               <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-2 rounded-lg font-bold shadow transition-colors">Simpan Data</button>
+             </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+const PrintView = ({ data, onClose }) => {
+  const printRef = useRef();
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  // Script loader untuk html2pdf
+  useEffect(() => {
+    const script = document.createElement('script');
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js";
+    script.async = true;
+    document.body.appendChild(script);
+    return () => { document.body.removeChild(script); }
+  }, []);
+
+  const handleDownloadPDF = async () => {
+    if (typeof window.html2pdf === 'undefined') {
+      alert("Sistem PDF sedang dimuat, mohon tunggu sebentar lalu coba lagi.");
+      return;
+    }
+    
+    setIsGenerating(true);
+    
+    const element = printRef.current;
+    
+    let filename = 'dokumen.pdf';
+    if (data.type === 'invoice') {
+      filename = `Invoice_${VILLAS[data.data.villaId].name.replace(/\s+/g, '')}_${data.data.guestName.replace(/\s+/g, '_')}.pdf`;
+    } else if (data.type === 'report') {
+      filename = `Laporan_Keuangan_${data.data.villa.name.replace(/\s+/g, '')}_${data.data.period}.pdf`;
+    }
+
+    const opt = {
+      margin:       0.5,
+      filename:     filename,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true },
+      jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+    };
+
+    // Tombol-tombol di-hide sementara selama proses screenshot
+    const buttons = element.querySelectorAll('.no-print');
+    buttons.forEach(btn => btn.style.display = 'none');
+
+    try {
+      await window.html2pdf().set(opt).from(element).save();
+    } catch(err) {
+      console.error(err);
+      alert("Gagal membuat PDF");
+    } finally {
+      // Tampilkan tombol kembali
+      buttons.forEach(btn => btn.style.display = 'flex');
+      setIsGenerating(false);
+    }
+  }
+
+  if (data.type === 'invoice') {
+    const b = data.data;
+    const v = VILLAS[b.villaId];
+    return (
+      <div className="min-h-screen bg-slate-100 text-black p-4 md:p-10 font-sans flex flex-col items-center">
+        
+        {/* Tombol Kontrol di luar area PDF */}
+        <div className="w-full max-w-3xl flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm">
+           <button onClick={onClose} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-300 font-medium flex items-center gap-2 transition-colors">
+             <ChevronLeft size={18}/> Kembali
+           </button>
+           <button onClick={handleDownloadPDF} disabled={isGenerating} className={`text-white px-6 py-2 rounded-lg shadow font-medium flex items-center gap-2 transition-colors ${isGenerating ? 'bg-slate-400 cursor-not-allowed' : 'bg-amber-500 hover:bg-amber-600'}`}>
+             {isGenerating ? 'Memproses PDF...' : <><Download size={18}/> Unduh PDF Invoice</>}
+           </button>
+        </div>
+
+        {/* Area yang akan di-PDF-kan */}
+        <div ref={printRef} className="w-full max-w-3xl bg-white p-12 shadow-lg border border-slate-200">
+          <div className="flex justify-between items-start border-b pb-8 mb-8 mt-4">
+            <div>
+              <h1 className="text-4xl font-black text-slate-800 tracking-tighter">INVOICE</h1>
+              <p className="text-slate-500 mt-1">ID: INV-{b.id ? b.id.slice(0,6).toUpperCase() : 'NEW'}</p>
+              <div className="mt-4">
+                <p className="text-sm text-slate-500 font-medium">Ditagihkan Kepada:</p>
+                <p className="font-bold text-lg text-slate-800">{b.guestName}</p>
+                {b.guestPhone && <p className="text-sm text-slate-600">{b.guestPhone}</p>}
+                {b.isBroker && <p className="text-sm text-blue-600 mt-1">Broker: {b.brokerName} ({b.brokerPhone})</p>}
+              </div>
+            </div>
+            <div className="text-right">
+              <h2 className="text-2xl font-bold text-amber-600">VILLA MANAGE</h2>
+              <p className="font-bold text-slate-800 mt-1">{v.name}</p>
+              <p className="text-sm text-slate-500">Jawa Barat, Indonesia</p>
+            </div>
+          </div>
+
+          <table className="w-full mb-8 text-left border-collapse">
+            <thead>
+              <tr className="border-b-2 border-slate-800 text-slate-800">
+                <th className="py-3">Deskripsi</th>
+                <th className="py-3 text-right">Detail</th>
+                <th className="py-3 text-right">Jumlah</th>
+              </tr>
+            </thead>
+            <tbody className="text-sm">
+              <tr className="border-b border-slate-200">
+                <td className="py-4">Sewa {v.name}</td>
+                <td className="py-4 text-right">{b.nights} Malam ({formatDate(b.checkIn)} - {formatDate(b.checkOut)})</td>
+                <td className="py-4 text-right font-medium">{formatRp(b.basePrice)}</td>
+              </tr>
+              {b.extrabedQty > 0 && (
+                <tr className="border-b border-slate-200">
+                  <td className="py-4">Extrabed</td>
+                  <td className="py-4 text-right">{b.extrabedQty} x {b.nights} Malam</td>
+                  <td className="py-4 text-right font-medium">{formatRp(b.extrabedPriceTotal)}</td>
+                </tr>
+              )}
+              {b.familyDiscount > 0 && (
+                <tr className="border-b border-slate-200 text-red-600">
+                  <td className="py-4">Diskon Keluarga</td>
+                  <td className="py-4 text-right">-</td>
+                  <td className="py-4 text-right font-medium">-{formatRp(b.familyDiscount)}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          <div className="flex justify-end text-sm mb-12">
+            <div className="w-2/3 md:w-1/2 space-y-2">
+              <div className="flex justify-between text-base">
+                <span className="font-bold text-slate-800">Grand Total</span>
+                <span className="font-bold text-lg text-slate-800">{formatRp(b.grandTotal)}</span>
+              </div>
+              <div className="flex justify-between border-b border-dashed border-slate-300 pb-2 mt-2">
+                <span className="text-slate-500">Pembayaran DP {b.dpDate ? `(${formatDate(b.dpDate)})` : ''}</span>
+                <span className="text-blue-700 font-medium">-{formatRp(b.dpAmount || 0)}</span>
+              </div>
+              {Number(b.pelunasanAmount) > 0 && (
+                <div className="flex justify-between border-b border-dashed border-slate-300 pb-2 pt-2">
+                  <span className="text-slate-500">Pelunasan {b.pelunasanDate ? `(${formatDate(b.pelunasanDate)})` : ''}</span>
+                  <span className="text-green-700 font-medium">-{formatRp(b.pelunasanAmount || 0)}</span>
+                </div>
+              )}
+              
+              <div className="flex justify-between pt-3 border-t border-slate-800 mt-2">
+                <span className="font-bold text-slate-800">SISA TAGIHAN</span>
+                <span className={`font-bold text-xl ${Math.max(0, b.grandTotal - (b.dpAmount || 0) - (b.pelunasanAmount || 0)) === 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatRp(Math.max(0, b.grandTotal - (b.dpAmount || 0) - (b.pelunasanAmount || 0)))}
+                </span>
+              </div>
+              <div className="text-right mt-2">
+                 <span className={`text-xs px-3 py-1.5 rounded font-bold ${b.paymentStatus === 'Lunas' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                   STATUS: {b.paymentStatus ? b.paymentStatus.toUpperCase() : 'BELUM DP'}
+                 </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t pt-8 text-center text-sm text-slate-500 mt-12">
+             <p className="font-medium text-slate-700">Terima kasih telah memilih {v.name}.</p>
+             <p className="mt-1">Semoga liburan dan acara Anda berkesan di tempat kami.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (data.type === 'report') {
+    const r = data.data;
+    return (
+      <div className="min-h-screen bg-slate-100 text-black p-4 md:p-10 font-sans flex flex-col items-center">
+        
+        {/* Tombol Kontrol di luar area PDF */}
+        <div className="w-full max-w-4xl flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm no-print">
+           <button onClick={onClose} className="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg hover:bg-slate-300 font-medium flex items-center gap-2 transition-colors">
+             <ChevronLeft size={18}/> Kembali
+           </button>
+           <button onClick={handleDownloadPDF} disabled={isGenerating} className={`text-white px-6 py-2 rounded-lg shadow font-medium flex items-center gap-2 transition-colors ${isGenerating ? 'bg-slate-400 cursor-not-allowed' : 'bg-slate-800 hover:bg-slate-900'}`}>
+             {isGenerating ? 'Memproses PDF...' : <><Download size={18}/> Unduh PDF Laporan</>}
+           </button>
+        </div>
+
+        {/* Area yang akan di-PDF-kan */}
+        <div ref={printRef} className="w-full max-w-4xl bg-white p-12 shadow-lg border border-slate-200">
+           <div className="text-center mb-10 border-b-2 pb-6 border-slate-800 mt-4">
+             <h1 className="text-3xl font-bold text-slate-800">LAPORAN KEUANGAN</h1>
+             <h2 className="text-xl font-semibold mt-2 text-slate-600">{r.villa.name}</h2>
+             <p className="text-slate-500 mt-1 font-medium">Periode: {r.period}</p>
+           </div>
+
+           <div className="grid grid-cols-2 gap-8 mb-10">
+             <div className="border p-6 bg-slate-50 rounded-lg col-span-2 md:col-span-1">
+                <h3 className="font-bold mb-4 text-slate-800 text-lg border-b pb-2">Ringkasan Laba Bersih</h3>
+                <div className="flex justify-between mb-2"><span className="text-slate-600">Total Pemasukan:</span> <span className="font-bold text-green-700">{formatRp(r.totalIncome)}</span></div>
+                <div className="flex justify-between mb-2"><span className="text-slate-600">Total Pengeluaran:</span> <span className="font-bold text-red-700">{formatRp(r.totalExpense)}</span></div>
+                <div className="flex justify-between mt-4 pt-4 border-t-2 border-slate-300"><span className="font-bold text-slate-800">Laba Bersih:</span> <span className="font-bold text-2xl text-slate-800">{formatRp(r.netProfit)}</span></div>
+             </div>
+           </div>
+
+           <h3 className="font-bold text-lg mb-3 text-green-700 border-b pb-2">Detail Pemasukan (Booking)</h3>
+           <table className="w-full text-sm mb-10 text-left border-collapse border border-slate-200">
+             <thead>
+               <tr className="bg-slate-100 text-slate-700">
+                 {r.reportType === 'semua' && <th className="border border-slate-200 p-3">Lokasi (Villa)</th>}
+                 <th className="border border-slate-200 p-3">Tamu</th>
+                 <th className="border border-slate-200 p-3">Tanggal Check-In</th>
+                 <th className="border border-slate-200 p-3 text-center">Malam</th>
+                 <th className="border border-slate-200 p-3 text-right">Total Pemasukan</th>
+               </tr>
+             </thead>
+             <tbody>
+                {r.bookings.length === 0 ? <tr><td colSpan={r.reportType === 'semua' ? "5" : "4"} className="border border-slate-200 p-4 text-center text-slate-500 italic">Tidak ada pemasukan di periode ini</td></tr> :
+                 r.bookings.map(b => (
+                   <tr key={b.id} className="hover:bg-slate-50">
+                     {r.reportType === 'semua' && <td className="border border-slate-200 p-3 font-medium">{VILLAS[b.villaId]?.name}</td>}
+                     <td className="border border-slate-200 p-3">{b.guestName} {b.isBroker ? <span className="text-xs text-blue-600 ml-1">(Broker)</span> : ''}</td>
+                     <td className="border border-slate-200 p-3">{formatDate(b.checkIn)}</td>
+                     <td className="border border-slate-200 p-3 text-center">{b.nights}</td>
+                     <td className="border border-slate-200 p-3 text-right font-medium">{formatRp(b.grandTotal)}</td>
+                   </tr>
+                 ))}
+             </tbody>
+           </table>
+
+           <h3 className="font-bold text-lg mb-3 text-red-700 border-b pb-2">Detail Pengeluaran</h3>
+           <table className="w-full text-sm mb-12 text-left border-collapse border border-slate-200">
+             <thead>
+               <tr className="bg-slate-100 text-slate-700">
+                 {r.reportType === 'semua' && <th className="border border-slate-200 p-3">Lokasi (Villa)</th>}
+                 <th className="border border-slate-200 p-3">Tanggal</th>
+                 <th className="border border-slate-200 p-3">Kategori</th>
+                 <th className="border border-slate-200 p-3">Keterangan</th>
+                 <th className="border border-slate-200 p-3 text-right">Jumlah Pengeluaran</th>
+               </tr>
+             </thead>
+             <tbody>
+                {r.expenses.length === 0 ? <tr><td colSpan={r.reportType === 'semua' ? "5" : "4"} className="border border-slate-200 p-4 text-center text-slate-500 italic">Tidak ada pengeluaran di periode ini</td></tr> :
+                 r.expenses.map(e => (
+                   <tr key={e.id} className="hover:bg-slate-50">
+                     {r.reportType === 'semua' && <td className="border border-slate-200 p-3 font-medium">{VILLAS[e.villaId]?.name}</td>}
+                     <td className="border border-slate-200 p-3">{formatDate(e.date)}</td>
+                     <td className="border border-slate-200 p-3">{e.category}</td>
+                     <td className="border border-slate-200 p-3">{e.description} <span className="text-xs text-slate-500">({e.staffName})</span></td>
+                     <td className="border border-slate-200 p-3 text-right font-medium text-red-600">{formatRp(e.amount)}</td>
+                   </tr>
+                 ))}
+             </tbody>
+           </table>
+
+           <div className="mt-20 text-right pr-12 pb-8">
+             <p className="mb-24 text-slate-600">Dibuat Oleh,</p>
+             <p className="font-bold border-b border-black inline-block min-w-[200px] text-center pb-1">Helmy</p>
+             <p className="text-slate-500 text-sm mt-1">Owner</p>
+           </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}

@@ -3,55 +3,48 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aplikasi Booking Villa Puncak</title>
+    <title>Villa Puncak Booking</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <div id="root"></div>
-    <script type="module">
-        import React, { useState } from 'https://esm.sh/react@18.2.0';
-        import ReactDOM from 'https://esm.sh/react-dom@18.2.0';
+<body class="bg-slate-100 font-sans">
+    <div id="app" class="min-h-screen flex items-center justify-center p-4">
+        <!-- Halaman Login -->
+        <div id="loginPage" class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm">
+            <h1 class="text-2xl font-bold text-amber-600 mb-6 text-center">Villa Puncak</h1>
+            <input type="text" id="userInput" placeholder="Username" class="w-full border p-3 rounded-lg mb-4">
+            <input type="password" id="passInput" placeholder="Password" class="w-full border p-3 rounded-lg mb-6">
+            <button onclick="checkLogin()" class="w-full bg-amber-500 text-white font-bold py-3 rounded-lg hover:bg-amber-600 transition">Masuk</button>
+        </div>
 
-        const Login = ({ onLogin }) => {
-            const [user, setUser] = useState('');
-            const [pass, setPass] = useState('');
-            
-            const handleLogin = (e) => {
-                e.preventDefault();
-                // Login sederhana untuk Pak Helmy
-                if (user === 'admin' && pass === '123') {
-                    onLogin({ user: 'Admin' });
-                } else {
-                    alert('Username/Password salah! Coba admin/123');
-                }
-            };
-
-            return (
-                <div class="min-h-screen flex items-center justify-center bg-slate-100 p-4">
-                    <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm">
-                        <h1 class="text-2xl font-bold text-amber-600 mb-6 text-center">Login Villa Puncak</h1>
-                        <form onSubmit={handleLogin} class="space-y-4">
-                            <input type="text" placeholder="Username" class="w-full p-3 border rounded-lg" value={user} onChange={e=>setUser(e.target.value)} />
-                            <input type="password" placeholder="Password" class="w-full p-3 border rounded-lg" value={pass} onChange={e=>setPass(e.target.value)} />
-                            <button class="w-full bg-amber-500 text-white py-3 rounded-lg font-bold hover:bg-amber-600">Masuk</button>
-                        </form>
-                    </div>
+        <!-- Dashboard (Hidden Awalnya) -->
+        <div id="dashboardPage" class="hidden w-full max-w-4xl">
+            <h1 class="text-3xl font-bold text-slate-800 mb-6">Dashboard Manajemen</h1>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white p-6 rounded-xl shadow border">
+                    <h2 class="font-bold text-lg mb-2">Booking Hari Ini</h2>
+                    <p class="text-slate-500">Sistem terhubung. Data akan muncul di sini.</p>
                 </div>
-            );
-        };
-
-        const App = () => {
-            const [loggedIn, setLoggedIn] = useState(false);
-            if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
-            return (
-                <div class="p-10 text-center">
-                    <h1 class="text-3xl font-bold text-slate-800">Selamat Datang di Sistem Villa!</h1>
-                    <p class="mt-4 text-slate-600">Sistem sudah aktif dan siap digunakan untuk mengelola reservasi.</p>
+                <div class="bg-white p-6 rounded-xl shadow border">
+                    <h2 class="font-bold text-lg mb-2">Laporan Keuangan</h2>
+                    <p class="text-slate-500">Belum ada transaksi.</p>
                 </div>
-            );
-        };
+            </div>
+            <button onclick="location.reload()" class="mt-6 text-slate-400 hover:text-slate-600">Keluar</button>
+        </div>
+    </div>
 
-        ReactDOM.render(<App />, document.getElementById('root'));
+    <script>
+        const USERS = { 'helmy': '789', 'maya': '678', 'yanti': '123' };
+        function checkLogin() {
+            const u = document.getElementById('userInput').value.toLowerCase();
+            const p = document.getElementById('passInput').value;
+            if (USERS[u] && USERS[u] === p) {
+                document.getElementById('loginPage').classList.add('hidden');
+                document.getElementById('dashboardPage').classList.remove('hidden');
+            } else {
+                alert("Username atau Password salah!");
+            }
+        }
     </script>
 </body>
 </html>

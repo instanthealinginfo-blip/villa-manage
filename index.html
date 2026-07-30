@@ -3,40 +3,55 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Villa Puncak Booking - Management System</title>
+    <title>Aplikasi Booking Villa Puncak</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-    </style>
 </head>
-<body class="bg-slate-50 min-h-screen">
-    <div id="root" class="flex items-center justify-center h-screen">
-        <div class="text-center p-8 bg-white rounded-2xl shadow-xl max-w-sm">
-            <h1 class="text-2xl font-bold text-amber-600 mb-2">Villa Puncak</h1>
-            <p class="text-slate-500">Memuat sistem manajemen penuh...</p>
-        </div>
-    </div>
+<body>
+    <div id="root"></div>
+    <script type="module">
+        import React, { useState } from 'https://esm.sh/react@18.2.0';
+        import ReactDOM from 'https://esm.sh/react-dom@18.2.0';
 
-    <script>
-        // Redirect sederhana ke dashboard atau load konten utama
-        window.onload = () => {
-            document.getElementById('root').innerHTML = `
-                <div class="p-8 text-center">
-                    <h2 class="text-3xl font-bold text-slate-800">Selamat Datang di Villa Puncak</h2>
-                    <p class="mt-4 text-slate-600">Sistem manajemen booking Anda sudah siap digunakan. 
-                    Silakan login untuk mulai mengelola reservasi.</p>
-                    <div class="mt-8 p-6 bg-amber-50 rounded-xl border border-amber-200">
-                        <p class="font-bold text-amber-700">Fitur Tersedia:</p>
-                        <ul class="mt-2 text-sm text-slate-600 space-y-1">
-                            <li>✓ Kalender Booking</li>
-                            <li>✓ Laporan Pengeluaran</li>
-                            <li>✓ Invoice Otomatis</li>
-                        </ul>
+        const Login = ({ onLogin }) => {
+            const [user, setUser] = useState('');
+            const [pass, setPass] = useState('');
+            
+            const handleLogin = (e) => {
+                e.preventDefault();
+                // Login sederhana untuk Pak Helmy
+                if (user === 'admin' && pass === '123') {
+                    onLogin({ user: 'Admin' });
+                } else {
+                    alert('Username/Password salah! Coba admin/123');
+                }
+            };
+
+            return (
+                <div class="min-h-screen flex items-center justify-center bg-slate-100 p-4">
+                    <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm">
+                        <h1 class="text-2xl font-bold text-amber-600 mb-6 text-center">Login Villa Puncak</h1>
+                        <form onSubmit={handleLogin} class="space-y-4">
+                            <input type="text" placeholder="Username" class="w-full p-3 border rounded-lg" value={user} onChange={e=>setUser(e.target.value)} />
+                            <input type="password" placeholder="Password" class="w-full p-3 border rounded-lg" value={pass} onChange={e=>setPass(e.target.value)} />
+                            <button class="w-full bg-amber-500 text-white py-3 rounded-lg font-bold hover:bg-amber-600">Masuk</button>
+                        </form>
                     </div>
                 </div>
-            `;
+            );
         };
+
+        const App = () => {
+            const [loggedIn, setLoggedIn] = useState(false);
+            if (!loggedIn) return <Login onLogin={() => setLoggedIn(true)} />;
+            return (
+                <div class="p-10 text-center">
+                    <h1 class="text-3xl font-bold text-slate-800">Selamat Datang di Sistem Villa!</h1>
+                    <p class="mt-4 text-slate-600">Sistem sudah aktif dan siap digunakan untuk mengelola reservasi.</p>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<App />, document.getElementById('root'));
     </script>
 </body>
 </html>

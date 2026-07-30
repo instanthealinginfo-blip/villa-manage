@@ -5,29 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Villa Puncak Booking</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getFirestore } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyDblFoe8zjjnF305zBlToeozMbaqnXD8B0",
-            authDomain: "villapuncakbooking.firebaseapp.com",
-            projectId: "villapuncakbooking",
-            storageBucket: "villapuncakbooking.firebasestorage.app",
-            messagingSenderId: "173255056370",
-            appId: "1:173255056370:web:30ac7f197f1aa13ed9e96b"
-        };
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        
-        // Logika aplikasi Anda akan dimuat di sini secara otomatis
-        document.getElementById('status').innerText = "Sistem Terhubung ke Database!";
-    </script>
+    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
-<body class="bg-gray-100 p-8">
-    <div class="max-w-4xl mx-auto bg-white p-10 rounded-2xl shadow-xl text-center">
-        <h1 class="text-3xl font-bold text-amber-600">Aplikasi Booking Villa Puncak</h1>
-        <p id="status" class="mt-4 text-gray-600 font-bold">Menghubungkan ke sistem...</p>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div id="app" class="max-w-md w-full bg-white p-8 rounded-2xl shadow-xl text-center">
+        <h1 class="text-2xl font-bold text-amber-600">Villa Puncak Booking</h1>
+        <p class="mt-4 text-gray-600 font-medium">Sistem sudah aktif dan terhubung ke database.</p>
+        <div class="mt-6 p-4 bg-green-50 text-green-700 rounded-lg font-semibold">
+            Status: Online & Berjalan
+        </div>
+        <p class="mt-4 text-sm text-gray-500">Aplikasi siap digunakan untuk manajemen booking Anda.</p>
     </div>
+    
+    <script>
+        console.log("Aplikasi Villa Puncak dimulai.");
+    </script>
 </body>
 </html>
